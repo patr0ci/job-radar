@@ -160,17 +160,17 @@ CASOS_COMBINA_COM = [
     # país hispanofalante já é o próprio sinal.
     ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", PERFIL_INTL, True),
 
-    # Perfil Brasil: cargo e cidade são checados em campos separados
-    # (título vs. local) — cidade fora da lista aceita barra mesmo com
-    # cargo batendo.
-    ("cidade-fora-da-lista-barrada", "Analista de Dados", "Nova York", "Presencial", PERFIL_BR, False),
-    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-forte-cidade-aceita-passa", "Analista de Dados Pleno", "Recife, PE", "Presencial", PERFIL_BR, True),
-    # keywords_ambiguo (ex: "Business Analyst") só conta com qualificador
-    # de dados junto no título — sozinho é ruído de outra área (RH,
-    # finanças).
-    ("cargo-ambiguo-sem-qualificador-barrado", "Business Analyst", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-ambiguo-com-qualificador-passa", "Business Analyst com SQL", "Recife, PE", "Presencial", PERFIL_BR, True),
+    # Perfil Brasil: cargo e modalidade são checados em campos separados
+    # (título vs. local/modalidade) — vaga presencial barra mesmo com o
+    # cargo batendo, em qualquer cidade (CIDADES é só ["Remoto"]).
+    ("presencial-barrado-mesmo-com-cargo-certo", "Desenvolvedor Backend", "Recife, PE", "Presencial", PERFIL_BR, False),
+    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Remoto", "Remoto", PERFIL_BR, False),
+    ("cargo-forte-remoto-passa", "Desenvolvedor de Software Pleno", "Remoto", "Remoto", PERFIL_BR, True),
+    # keywords_ambiguo (ex: "Desenvolvedor" sozinho) só conta com
+    # qualificador técnico junto no título — sozinho é ruído de outra área
+    # ("Desenvolvedor de Negócios" é vaga de vendas).
+    ("cargo-ambiguo-sem-qualificador-barrado", "Desenvolvedor de Negócios", "Remoto", "Remoto", PERFIL_BR, False),
+    ("cargo-ambiguo-com-qualificador-passa", "Desenvolvedor(a) Back-end", "Remoto", "Remoto", PERFIL_BR, True),
 ]
 
 
@@ -221,8 +221,8 @@ CASOS_PUBLICACAO_ANTIGA = [
 )
 def test_publicacao_antiga(nome, publicado_em, esperado):
     job = Job(
-        titulo="Analista de Dados", empresa="Teste", local="Recife, PE",
-        link=f"https://teste.invalido/{nome}", site="Teste", modalidade="Presencial",
+        titulo="Desenvolvedor Backend", empresa="Teste", local="Remoto",
+        link=f"https://teste.invalido/{nome}", site="Teste", modalidade="Remoto",
         publicado_em=publicado_em,
     )
     assert job.publicacao_antiga == esperado

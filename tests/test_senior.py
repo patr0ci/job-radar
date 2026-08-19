@@ -104,18 +104,25 @@ def test_local(localizacao, esperado):
     assert _local(localizacao) == esperado
 
 
-def test_local_sai_no_formato_que_o_filtro_de_cidade_entende():
-    """O filtro procura o nome da cidade dentro do texto de `local`, e o
-    escopo remoto lê a UF depois do hífen (ver extrair_escopo_remoto)."""
+def test_local_sai_no_formato_que_o_filtro_entende():
+    """O escopo remoto le a UF depois do hifen (ver extrair_escopo_remoto),
+    entao o formato que este scraper monta precisa continuar sendo o que
+    aquele parser espera.
+
+    Era um teste de CIDADE (vaga presencial em Natal tinha que passar).
+    Virou teste de escopo REMOTO quando CIDADES passou a ser so ["Remoto"]:
+    a vaga presencial nao passa mais em lugar nenhum, mas o formato do
+    texto de local continua importando -- e agora e no caminho do escopo
+    que ele importa."""
     from core.job import extrair_escopo_remoto
     from core.perfis import PERFIL_BR
     from core.job import Job
 
-    job = Job(titulo="Analista de Dados", empresa="X",
-              local=_local({"city": "Natal", "province": "RN", "country": "Brasil"}),
-              link="https://x/1", site="Senior", modalidade="Presencial")
+    local = _local({"city": "Natal", "province": "RN", "country": "Brasil"})
+    job = Job(titulo="Desenvolvedor Backend", empresa="X", local=local,
+              link="https://x/1", site="Senior", modalidade="Remoto")
     assert job.combina_com(PERFIL_BR.regras)
-    assert extrair_escopo_remoto("Natal - RN", "Remoto") == {"Brasil"}
+    assert extrair_escopo_remoto(local, "Remoto") == {"Brasil"}
 
 
 # --------------------------------------------------------------- EXPIRADA

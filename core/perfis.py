@@ -22,7 +22,7 @@ from core.config import (
     KEYWORDS,
     KEYWORDS_CARGO_FORTE,
     KEYWORDS_CARGO_AMBIGUO,
-    QUALIFICADORES_DADOS,
+    QUALIFICADORES_TECNICOS,
     FERRAMENTAS_TITULO,
     QUALIFICADORES_CARGO,
     CIDADES,
@@ -94,12 +94,18 @@ class Perfil:
     max_scrapers_concorrentes: int = 4
 
 
-# Regra primária: cidade brasileira (Nordeste) ou "Remoto" com mercado
-# Brasil/LATAM/Portugal/Espanha aceito (ver Job.escopo_remoto).
+# Regra primária: vaga de desenvolvimento, REMOTA, de qualquer mercado —
+# CIDADES é só ["Remoto"] e MERCADOS_REMOTO_ACEITOS é None (ver config.py).
+#
+# O campo continua se chamando `qualificadores_dados` em RegrasFiltro
+# (core/job.py) — o nome vem de quando o radar era de Dados/BI. O papel
+# dele é "termo que confirma o domínio quando o cargo é ambíguo", que vale
+# igual pra qualquer área; renomear o campo só pra ficar bonito mexeria em
+# job.py e nos testes sem mudar comportamento nenhum.
 _REGRAS_BR = RegrasFiltro(
     keywords_forte=KEYWORDS_CARGO_FORTE,
     keywords_ambiguo=KEYWORDS_CARGO_AMBIGUO,
-    qualificadores_dados=QUALIFICADORES_DADOS,
+    qualificadores_dados=QUALIFICADORES_TECNICOS,
     ferramentas_titulo=FERRAMENTAS_TITULO,
     qualificadores_cargo=QUALIFICADORES_CARGO,
     cidades=CIDADES,
@@ -113,7 +119,7 @@ _REGRAS_BR = RegrasFiltro(
 _REGRAS_BR_IBERIA = RegrasFiltro(
     keywords_forte=KEYWORDS_CARGO_FORTE,
     keywords_ambiguo=KEYWORDS_CARGO_AMBIGUO,
-    qualificadores_dados=QUALIFICADORES_DADOS,
+    qualificadores_dados=QUALIFICADORES_TECNICOS,
     ferramentas_titulo=FERRAMENTAS_TITULO,
     qualificadores_cargo=QUALIFICADORES_CARGO,
     cidades=CIDADES_EUROPA_IBERICA,
@@ -184,7 +190,12 @@ _SCRAPERS_BR = [
     DefinicaoScraper(CathoScraper, FREQUENCIA_BAIXA),       # <1%, timeout frequente em headless
     DefinicaoScraper(GeekHunterScraper, FREQUENCIA_BAIXA),  # <1%
     DefinicaoScraper(Jobs99Scraper, FREQUENCIA_BAIXA),      # <1%, fonte confirmada funcionando
-    DefinicaoScraper(WeWorkRemotelyIntlScraper, FREQUENCIA_BAIXA),  # nova, sem medição própria
+    # Promovida a FREQUENCIA_ALTA junto com a virada pra vaga de dev: é a
+    # única fonte da lista nativamente 100% remota e global, e o filtro de
+    # mercado que antes descartava boa parte do que ela trazia
+    # (MERCADOS_REMOTO_ACEITOS) agora está desligado — "o país não importa,
+    # o importante é ser remoto". As outras 7 são portais brasileiros.
+    DefinicaoScraper(WeWorkRemotelyIntlScraper, FREQUENCIA_ALTA),
     # MEDIDO ao vivo antes de ligar (3 termos, 398 vagas brutas): rendimento
     # de 0,3% — abaixo da Sólides (1,1%), a fonte mais fraca que ficou. A
     # busca da API casa pedaço de palavra, não o termo: "analista bi" trouxe

@@ -54,7 +54,7 @@ def cenario(monkeypatch):
     # fim do arquivo.
     monkeypatch.setattr(main, "DIGEST_HORA_UTC", 0)
     monkeypatch.setattr(main, "obter_vagas_pendentes_digest",
-                        lambda p: [("Analista de Dados", "Empresa", "https://x/1", 6, 0)])
+                        lambda p: [("Desenvolvedor Backend", "Empresa", "https://x/1", 6, 0)])
     return estado
 
 

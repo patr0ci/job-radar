@@ -114,7 +114,7 @@ from core.job import Job                     # noqa: E402
 from core.perfis import PERFIL_BR, PERFIL_INTL  # noqa: E402
 
 
-def _vaga(local, modalidade, titulo="Analista de Dados"):
+def _vaga(local, modalidade, titulo="Desenvolvedor Backend Python"):
     return Job(
         titulo=titulo, empresa="Empresa Teste", local=local,
         link=f"https://exemplo.com/{abs(hash((local, modalidade, titulo)))}",
@@ -143,14 +143,25 @@ def test_texto_do_local_nao_sobrepoe_modalidade_declarada(local, modalidade):
     assert not _vaga(local, modalidade).combina_com(PERFIL_BR.regras)
 
 
-@pytest.mark.parametrize("local", ["São Paulo - SP", "Bloomington, IN", "Remote - US only"])
+@pytest.mark.parametrize("local", ["São Paulo - SP", "Bloomington, IN"])
 def test_fallback_de_modalidade_nao_abre_vaga_fora_da_regra(local):
+    """Local sem nenhum vocabulario de remoto continua sendo presencial,
+    mesmo com a fonte deixando o campo modalidade vazio."""
     assert not _vaga(local, "").combina_com(PERFIL_BR.regras)
+
+
+def test_fallback_de_modalidade_vale_para_mercado_estrangeiro():
+    """"Remote - US only" estava no teste acima, do lado do rejeita, quando
+    MERCADOS_REMOTO_ACEITOS barrava mercado nao-lusofono. Com o filtro de
+    mercado desligado (so remoto, pais indiferente), ele passou pro lado do
+    aceita -- e continua exercitando o fallback, que e o que este arquivo
+    testa: modalidade vazia, remoto reconhecido pelo texto do local."""
+    assert _vaga("Remote - US only", "").combina_com(PERFIL_BR.regras)
 
 
 def test_titulo_nunca_serve_de_sinal_de_local():
     """Bug original desta base: titulo e local eram concatenados, entao
     vaga americana com "Hybrid Remote" no TITULO batia "remot" e passava
     como remota. O fallback le SO o campo local."""
-    vaga = _vaga("Bloomington, IN", "", titulo="Data Analyst (Hybrid Remote)")
+    vaga = _vaga("Bloomington, IN", "", titulo="Backend Developer (Hybrid Remote)")
     assert not vaga.combina_com(PERFIL_BR.regras)

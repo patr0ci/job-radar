@@ -18,6 +18,19 @@
 
 ---
 
+> ### ℹ️ Sobre este fork
+>
+> Este é um **fork** do [JobRadar original](https://github.com/liliamkezia-star/job-radar), da Liliam Kezia — todo o crédito de arquitetura, motor de filtro e engenharia registrada abaixo é dela.
+>
+> Duas coisas mudam aqui, e só elas:
+>
+> - **O alvo do radar.** As listas de `core/config.py` foram recalibradas de **Dados/BI** para **vaga de desenvolvedor** (backend / frontend / fullstack). O motor não muda — ele nunca soube de que área é a vaga.
+> - **Onde roda.** Em vez do GitHub Actions, roda num container Docker em servidor próprio, em loop contínuo. O workflow `jobradar.yml` fica desabilitado neste fork; o `testes.yml` continua ativo.
+>
+> Regra de localização deste fork: **só vaga remota, de qualquer país** (`CIDADES = ["Remoto"]`, `MERCADOS_REMOTO_ACEITOS = None`). O texto abaixo descreve o projeto original — onde ele fala em cargos de Dados/BI ou em cidades do Nordeste, vale o que está no `config.py`.
+
+---
+
 ## 💎 Proposta de valor
 
 > Em cidade pequena, vaga boa de Dados/BI aparece pouco e some rápido — quem checa o board duas vezes por dia perde pra quem checou na primeira hora. **JobRadar** é um sistema de monitoramento contínuo que substitui essa checagem manual: varre **8 fontes** a cada **3 horas**, filtra por cargo/cidade/mercado/idioma com três níveis de confiança, pontua cada vaga por relevância e notifica no Telegram — rodando de graça, sem servidor próprio, 24 horas por dia.
