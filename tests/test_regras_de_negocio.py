@@ -14,6 +14,13 @@ Regra ATUAL (perfil BR recalibrado pra vaga de DESENVOLVEDOR), resumida:
                remoto em mercado de lingua portuguesa/espanhola). Nao
                roda em producao hoje (main.py --perfil brasil), mas a
                regra continua testada pra nao apodrecer.
+  EMPRESA   -> vaga da BairesDev e rejeitada sempre, em qualquer perfil e
+               qualquer grafia (ver EMPRESAS_BLOQUEADAS em config.py). E
+               veto, nao mais um sinal a somar: titulo bom nao compensa.
+  NOTA      -> vaga com relevancia abaixo de LIMIAR_RELEVANCIA_MINIMA nao
+               notifica nem entra no digest (ver ciclo_de_busca em
+               main.py). O corte em si mora no main; o que este arquivo
+               fixa e QUAL vaga cai de que lado dele.
 
 O requisito anterior (hibrido/presencial nas seis cidades do Nordeste,
 remoto so de mercado Brasil/LATAM/Iberia) saiu inteiro. Os testes que o
@@ -24,6 +31,7 @@ em vez de passar despercebida.
 
 import pytest
 
+from core.config import LIMIAR_RELEVANCIA_MINIMA
 from core.job import Job
 from core.perfis import PERFIL_BR, PERFIL_INTL
 
@@ -249,3 +257,121 @@ def test_cargo_no_titulo(titulo, esperado):
 ])
 def test_nenhuma_cidade_passa_em_presencial(local):
     assert not _vaga(TITULO_DEV, local, "Presencial").combina_com(PERFIL_BR.regras)
+
+
+# ------------------------------------------------- BLOQUEIO POR EMPRESA
+#
+# Unico criterio do filtro que le Job.empresa -- todo o resto olha so
+# titulo/local/modalidade. Por isso os casos abaixo usam titulo e local que
+# comprovadamente PASSAM (ver testes acima): o que esta sendo verificado e
+# que a empresa derruba sozinha uma vaga que era boa em todo o resto.
+
+def _vaga_de(empresa, titulo=TITULO_DEV, local="Remoto", modalidade="Remoto"):
+    return Job(
+        titulo=titulo, empresa=empresa, local=local,
+        link=f"https://exemplo.com/{abs(hash((empresa, titulo, local)))}",
+        site="Teste", modalidade=modalidade,
+    )
+
+
+@pytest.mark.parametrize("empresa", [
+    # As duas grafias que existem DE VERDADE no jobs.db: 19 linhas com
+    # "BAIRESDEV" e 18 com "BairesDev". Bloquear a string literal pegaria
+    # so metade -- dai a comparacao ser normalizada.
+    "BairesDev", "BAIRESDEV", "bairesdev",
+    # Razao social com sufixo/prefixo: a borda de palavra tem que aceitar.
+    "BairesDev LLC", "BairesDev - Brasil", "Vaga na BairesDev",
+    "  BairesDev  ",
+])
+def test_bairesdev_e_rejeitada_em_qualquer_grafia(empresa):
+    assert not _vaga_de(empresa).combina_com(PERFIL_BR.regras)
+
+
+@pytest.mark.parametrize("empresa", [
+    # "baires" sozinho NAO e a BairesDev -- se a blocklist virasse
+    # substring crua, esta empresa cairia junto.
+    "Baires Consultoria",
+    # Sem borda de palavra depois de "bairesdev": deliberadamente NAO
+    # bloqueada. Preferimos deixar passar um caso raro a arriscar derrubar
+    # empresa alheia (mesmo trade-off documentado em _contem_termo).
+    "Bairesdevelopers",
+    "Dev Solutions", "Empresa Teste",
+])
+def test_blocklist_nao_derruba_empresa_de_nome_parecido(empresa):
+    assert _vaga_de(empresa).combina_com(PERFIL_BR.regras)
+
+
+def test_bairesdev_tambem_e_rejeitada_no_perfil_internacional():
+    """Empresa que nao interessa nao passa a interessar por mudar de
+    mercado -- a mesma lista vale nos dois perfis."""
+    assert _vaga_de("Empresa Teste", "Data Analyst", "Remote - Spain").combina_com(PERFIL_INTL.regras)
+    assert not _vaga_de("BairesDev", "Data Analyst", "Remote - Spain").combina_com(PERFIL_INTL.regras)
+
+
+def test_bloqueio_de_empresa_so_conta_no_diagnostico_quando_foi_ele_que_derrubou():
+    """empresa_rejeitada_por_bloqueio existe pra vigiar entrada mal
+    escolhida na blocklist: conta so vaga que TERIA passado. Vaga da
+    empresa bloqueada que ja cairia por cargo nao infla o numero."""
+    boa = _vaga_de("BairesDev", TITULO_DEV)
+    ja_cairia = _vaga_de("BairesDev", "Zelador")
+    assert boa.empresa_rejeitada_por_bloqueio(PERFIL_BR.regras) == "BairesDev"
+    assert ja_cairia.empresa_rejeitada_por_bloqueio(PERFIL_BR.regras) is None
+
+
+# ------------------------------------------------- PISO DE RELEVANCIA
+#
+# Os valores abaixo foram conferidos rodando pontuar_relevancia() de
+# verdade, nao deduzidos do peso -- convencao do arquivo.
+#
+# O que eles documentam nao e so "quanto vale cada vaga": e que, no perfil
+# de desenvolvedor, o teto pratico caiu. _PESO_FERRAMENTA (+2) quase nunca
+# dispara, porque FERRAMENTAS_TITULO so tem 8 frameworks e Python/Java/PHP
+# moram em QUALIFICADORES_TECNICOS (outra lista, outro papel). Com isso,
+# vaga sem palavra de nivel no titulo empaca em 4-5 e o piso 6 a corta --
+# ver o comentario de LIMIAR_RELEVANCIA_MINIMA em config.py, que registra o
+# efeito medido e as saidas caso o volume fique baixo demais.
+
+@pytest.mark.parametrize("titulo, score_esperado", [
+    # Cargo forte (+3) + nivel alvo (+2) + remoto sem mercado (+1) = 6.
+    ("Desenvolvedor Backend Python Júnior", 6),
+    ("Desenvolvedor Backend Python Pleno", 6),
+    # Mesmo cargo forte, SEM palavra de nivel: senioridade neutra (+1) em
+    # vez de (+2). Um ponto separa notificar de descartar.
+    ("Desenvolvedor Backend Python", 5),
+    # Cargo ambiguo (+2) em vez de forte -- "Desenvolvedor Python" nao esta
+    # em KEYWORDS_CARGO_FORTE ("Python Developer" esta).
+    ("Desenvolvedor Python Pleno", 5),
+    ("Desenvolvedor Full Stack", 4),
+    ("Desenvolvedor Java", 4),
+    ("Programador PHP", 4),
+    # Senioridade acima do alvo pesa -2 e afunda ate o cargo forte.
+    ("Desenvolvedor Backend Python Sênior", 2),
+])
+def test_score_de_vaga_remota_no_perfil_desenvolvedor(titulo, score_esperado):
+    vaga = _vaga_de("Empresa Teste", titulo)
+    assert vaga.combina_com(PERFIL_BR.regras), "caso so faz sentido se a vaga passa no filtro"
+    assert vaga.pontuar_relevancia(PERFIL_BR.regras) == score_esperado
+
+
+@pytest.mark.parametrize("titulo", [
+    "Desenvolvedor Backend Python Júnior",
+    "Desenvolvedor Backend Python Pleno",
+])
+def test_vaga_com_nivel_alvo_sobrevive_ao_piso(titulo):
+    vaga = _vaga_de("Empresa Teste", titulo)
+    assert vaga.pontuar_relevancia(PERFIL_BR.regras) >= LIMIAR_RELEVANCIA_MINIMA
+
+
+@pytest.mark.parametrize("titulo", [
+    "Desenvolvedor Backend Python",
+    "Desenvolvedor Full Stack",
+    "Programador PHP",
+    "Desenvolvedor Backend Python Sênior",
+])
+def test_vaga_sem_nivel_alvo_e_cortada_pelo_piso(titulo):
+    """Consequencia deliberada e documentada do piso 6 -- estes titulos
+    passam no filtro de cargo e sao remotos, e mesmo assim nao notificam.
+    Se o piso mudar, ESTE teste e o que quebra primeiro."""
+    vaga = _vaga_de("Empresa Teste", titulo)
+    assert vaga.combina_com(PERFIL_BR.regras)
+    assert vaga.pontuar_relevancia(PERFIL_BR.regras) < LIMIAR_RELEVANCIA_MINIMA

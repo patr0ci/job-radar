@@ -337,7 +337,78 @@ LOCATIONS_LINKEDIN_CIDADES_PRESENCIAL = [c for c in CIDADES if c != "Remoto"]
 # passam de propósito.
 MERCADOS_REMOTO_ACEITOS = None
 
+# Empresas rejeitadas pelo NOME, independentemente de cargo, nota ou
+# localização. É o único critério do filtro que lê `empresa` — todo o resto
+# de Job._avaliar() olha só título/local/modalidade (a empresa até então
+# servia apenas pra dedup, via Job.chave_secundaria, e pra exibir na
+# notificação).
+#
+# Compartilhada pelos dois perfis (BR e internacional, ver core/perfis.py):
+# empresa que não interessa não passa a interessar por mudar de mercado.
+#
+# MEDIDO: BairesDev sozinha respondia por 37 das 1.302 vagas do jobs.db
+# (2,8%), gravadas em DUAS grafias diferentes — "BAIRESDEV" (19) e
+# "BairesDev" (18), dependendo da fonte que trouxe. Daí a comparação ser
+# normalizada (minúsculo, sem acento) e não literal: bloquear a string exata
+# pegaria só metade.
+#
+# Essas 37 são todas do perfil ANTIGO (títulos de Dados/BI) — reprocessadas
+# sob a regra de desenvolvedor de hoje, nenhuma passaria no filtro de cargo
+# de qualquer jeito. A blocklist existe pro que vier daqui pra frente: a
+# BairesDev anuncia vaga de dev em volume alto e em todas as fontes, e é
+# justamente o tipo de anúncio que bate o filtro de cargo com folga.
+#
+# O match usa borda de palavra (_contem_termo), não substring crua:
+# "BairesDev LLC" e "BairesDev - Brasil" batem igual, mas um nome curto que
+# entre nesta lista no futuro não derruba empresa alheia que apenas contenha
+# essas letras no meio — é exatamente o bug que "bi" causou nas keywords de
+# cargo (ver _contem_termo em core/job.py).
+EMPRESAS_BLOQUEADAS = [
+    "bairesdev",
+]
+
 INTERVALO_MINUTOS = int(os.getenv("INTERVALO_MINUTOS", 180))
+
+# Piso de relevância: vaga com score ABAIXO deste valor é descartada — não
+# notifica na hora nem entra no digest. É o primeiro uso do score como
+# CORTE; até aqui ele só ordenava (ver LIMIAR_DIGEST_IMEDIATO abaixo), e
+# tudo que passava em combina_com() acabava notificado uma hora ou outra.
+#
+# ATENÇÃO — 6 é um corte AGRESSIVO no perfil de desenvolvedor atual, por um
+# motivo estrutural que não é óbvio olhando a escala "1 a 10".
+#
+# MEDIDO (reprocessando as 1.302 vagas do jobs.db sob o perfil ATUAL, não
+# lendo a coluna `relevancia`, que está obsoleta — foi gravada sob o perfil
+# de Dados/BI, antes da recalibração do commit 6521f17): só 5 vagas da base
+# inteira ainda passam em combina_com(), e o piso 6 corta 4 dessas 5.
+#
+# A causa é o peso de ferramenta quase nunca disparar. FERRAMENTAS_TITULO
+# tem só 8 nomes de framework (React, Angular, Vue.js, Node.js, Django,
+# Laravel, Spring Boot, Next.js); Python, Java, PHP e .NET moram em
+# QUALIFICADORES_TECNICOS, que serve pra OUTRA coisa (confirmar domínio de
+# cargo ambíguo). Então "Desenvolvedor Backend Python" não ganha os +2 de
+# _PESO_FERRAMENTA. Somado a isso, CIDADES é só-remoto e
+# MERCADOS_REMOTO_ACEITOS é None, então quase toda vaga fica em "remota sem
+# mercado declarado" = +1, nunca os +2 de mercado confirmado.
+#
+# Sobra este teto prático, conferido rodando o código:
+#   "Desenvolvedor Backend Python"          -> 5   (cortada)
+#   "Desenvolvedor Full Stack"              -> 4   (cortada)
+#   "Programador PHP" / "Desenvolvedor Java"-> 4   (cortada)
+#   "Desenvolvedor Backend Python Júnior"   -> 6   (passa)
+#   "Desenvolvedor Backend Python Sênior"   -> 2   (cortada)
+#
+# Ou seja: com piso 6, na prática só passa vaga que diga "Júnior"/"Pleno"
+# no título (é o +2 de senioridade que fecha a conta) ou que cite um dos 8
+# frameworks. Vaga boa e remota sem palavra de nível no título — a maioria
+# dos anúncios reais — é descartada.
+#
+# Escolhido assim por pedido explícito ("rejeitar vagas com pontuação
+# abaixo de 6"). Se o volume vier baixo demais, o ajuste barato é 5 (deixa
+# passar o "Desenvolvedor Backend Python" sem nível declarado); o ajuste
+# CERTO é rebalancear os pesos em job.py — mover as linguagens pra
+# FERRAMENTAS_TITULO faria a escala voltar a usar a faixa de cima.
+LIMIAR_RELEVANCIA_MINIMA = 6
 
 # Digest ranqueado (item 08): vaga com Job.pontuar_relevancia() >= este
 # limiar notifica na hora (como sempre foi); abaixo disso, fica na fila do

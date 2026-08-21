@@ -106,11 +106,12 @@ obradar/
 ├── scrapers/ ← um módulo por fonte (LinkedIn, Gupy, Indeed...)
 ├── utils/
 │ └── filtro.py
-├── tests/ ← 73 casos, roda em CI a cada push
+├── tests/ ← 418 casos, roda em CI a cada push
 ├── data/
 │ └── jobs.db ← banco versionado (histórico de dedup)
 └── .github/workflows/
 ├── jobradar.yml ← cron de produção (a cada 3h)
+├── linkedin-recomendadas.yml ← cron das vagas recomendadas (a cada 2 dias)
 └── testes.yml ← CI
 
 ## 💻 Como rodar
@@ -129,13 +130,15 @@ Criar `.env` na raiz com `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (via [@BotFat
 python main.py --perfil brasil internacional --once
 ```
 
+Há ainda o perfil `linkedin`, que lê as **vagas recomendadas** da sua conta do LinkedIn (API privada, exige o cookie `li_at`) e roda num cron próprio, de 2 em 2 dias. É opcional: sem o cookie configurado ele se desliga sozinho. Como configurar, onde pegar os cookies e quais os riscos estão em [`docs/linkedin-recomendadas.md`](docs/linkedin-recomendadas.md).
+
 ## 🧪 Testes
 
 ```bash
 pytest tests/ -v
 ```
 
-73 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
+418 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
 
 ---
 

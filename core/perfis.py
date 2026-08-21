@@ -28,6 +28,7 @@ from core.config import (
     CIDADES,
     CIDADES_EUROPA_IBERICA,
     ATIVAR_EIXO_IBERICO_BR,
+    EMPRESAS_BLOQUEADAS,
     MERCADOS_REMOTO_ACEITOS,
     TERMOS_BUSCA,
     TERMOS_POR_CICLO,
@@ -52,6 +53,7 @@ from scrapers.indeed_intl import IndeedIntlScraper
 from scrapers.jobs99 import Jobs99Scraper
 from scrapers.linkedin import LinkedInScraper
 from scrapers.linkedin_intl import LinkedInIntlScraper
+from scrapers.linkedin_recomendadas import LinkedInRecomendadasScraper
 from scrapers.senior import SeniorScraper
 from scrapers.solides import SolidesScraper
 from scrapers.weworkremotely_intl import WeWorkRemotelyIntlScraper
@@ -92,6 +94,19 @@ class Perfil:
     termos_por_ciclo: int
     definicao_scrapers: list[DefinicaoScraper]
     max_scrapers_concorrentes: int = 4
+    # De quantos em quantos dias as fontes FREQUENCIA_BAIXA deste perfil
+    # podem rodar. 1 = uma vez por dia, que era a única cadência possível
+    # antes deste campo existir (e continua sendo o default, então os
+    # perfis Brasil e Internacional não mudam de comportamento).
+    #
+    # Existe por causa do LinkedIn Recomendadas, que bate numa API PRIVADA
+    # autenticado como o usuário: lá a cadência não é economia de tempo de
+    # ciclo (o motivo de FREQUENCIA_BAIXA existir), é risco de bloqueio da
+    # conta pessoal. Por isso o controle mora aqui, no código, e não só no
+    # cron do workflow: agendamento não impede um `workflow_dispatch`
+    # manual, nem um re-run do GitHub Actions, de bater no LinkedIn de novo
+    # no mesmo dia. O metadado no banco impede.
+    intervalo_baixa_frequencia_dias: int = 1
 
 
 # Regra primária: vaga de desenvolvimento, REMOTA, de qualquer mercado —
@@ -110,6 +125,7 @@ _REGRAS_BR = RegrasFiltro(
     qualificadores_cargo=QUALIFICADORES_CARGO,
     cidades=CIDADES,
     mercados_remoto_aceitos=MERCADOS_REMOTO_ACEITOS,
+    empresas_bloqueadas=EMPRESAS_BLOQUEADAS,
 )
 
 # Eixo secundário (Ibéria): mesma regra de cargo, cidade europeia em vez de
@@ -123,6 +139,7 @@ _REGRAS_BR_IBERIA = RegrasFiltro(
     ferramentas_titulo=FERRAMENTAS_TITULO,
     qualificadores_cargo=QUALIFICADORES_CARGO,
     cidades=CIDADES_EUROPA_IBERICA,
+    empresas_bloqueadas=EMPRESAS_BLOQUEADAS,
 )
 
 # Revelo não entrou: o portal de vagas exige login pra navegar, não dá pra
@@ -256,6 +273,7 @@ _REGRAS_INTL = RegrasFiltro(
     cidades=CIDADES_INTL,
     mercados_remoto_aceitos=MERCADOS_REMOTO_ACEITOS_INTL,
     idiomas_exigidos=IDIOMAS_EXIGIDOS_INTL,
+    empresas_bloqueadas=EMPRESAS_BLOQUEADAS,
 )
 
 # Eixo secundário (Ibéria): vaga presencial/híbrida em Portugal/Espanha,
@@ -268,6 +286,7 @@ _REGRAS_INTL_IBERIA = RegrasFiltro(
     ferramentas_titulo=[],
     qualificadores_cargo=[],
     cidades=CIDADES_EUROPA_IBERICA,
+    empresas_bloqueadas=EMPRESAS_BLOQUEADAS,
 )
 
 # As 3 fontes rodam toda vez (FREQUENCIA_ALTA) — perfil novo, sem medição de
@@ -296,7 +315,47 @@ PERFIL_INTL = Perfil(
     max_scrapers_concorrentes=3,
 )
 
+# Perfil próprio pro LinkedIn Recomendadas, em vez de mais uma fonte dentro
+# do perfil Brasil. Três motivos, todos de isolamento:
+#
+# 1. CADÊNCIA. Esta fonte roda de 2 em 2 dias (risco de bloqueio de conta,
+#    ver o docstring do scraper). A janela de baixa frequência é por
+#    PERFIL — dentro do Brasil, mudar o intervalo pra 2 dias arrastaria
+#    junto toda fonte FREQUENCIA_BAIXA de lá.
+# 2. CRON SEPARADO. Com chave própria, o workflow dedicado chama
+#    `--perfil linkedin` sem tocar no ciclo de 3h.
+# 3. MEDIÇÃO. `site="LinkedIn Recomendadas"` separado do "LinkedIn" do
+#    scraper público deixa o relatorio_precisao.py comparar o rendimento
+#    das duas formas de ler a mesma fonte.
+#
+# O que NÃO muda é o que o usuário pediu que não mudasse: as regras são as
+# mesmas `_REGRAS_BR` do perfil de desenvolvedor, então a vaga recomendada
+# passa pelo mesmo filtro, ganha o mesmo score, respeita a mesma blocklist e
+# o mesmo piso de relevância, e cai no mesmo banco com a mesma dedup.
+#
+# termos_busca vazio de propósito: a coleção recomendada não recebe consulta
+# (ver o docstring de LinkedInRecomendadasScraper). _proximo_bloco_termos()
+# devolve [] pra lista vazia, sem caso especial.
+PERFIL_LINKEDIN = Perfil(
+    chave="linkedin",
+    nome="LinkedIn Recomendadas",
+    palavras_monitoradas=KEYWORDS,
+    paises_pesquisados=None,
+    regras=_REGRAS_BR,
+    regras_eixo_secundario=None,
+    eixo_secundario_ativo=False,
+    eixo_secundario_rotulo="",
+    termos_busca=[],
+    termos_por_ciclo=0,
+    definicao_scrapers=[
+        DefinicaoScraper(LinkedInRecomendadasScraper, FREQUENCIA_BAIXA),
+    ],
+    max_scrapers_concorrentes=1,
+    intervalo_baixa_frequencia_dias=2,
+)
+
 PERFIS = {
     PERFIL_BR.chave: PERFIL_BR,
     PERFIL_INTL.chave: PERFIL_INTL,
+    PERFIL_LINKEDIN.chave: PERFIL_LINKEDIN,
 }

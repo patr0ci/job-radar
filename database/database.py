@@ -235,14 +235,30 @@ def definir_metadado(chave: str, valor: str):
         )
 
 
-def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, exploratoria: bool = False):
+def salvar_vaga(
+    job,
+    perfil_chave: str = "",
+    digest_pendente: bool = False,
+    exploratoria: bool = False,
+    situacao: str = "nova",
+):
     """`digest_pendente=True` marca a vaga como ainda não notificada —
     entrou na fila do digest diário (ver _enviar_digest_diario em main.py)
     em vez de mandar mensagem individual na hora, porque a relevância ficou
     abaixo do limiar. `perfil_chave` é o que permite o digest buscar só as
     pendentes DESSE perfil (ver obter_vagas_pendentes_digest) — sem isso,
     rodar brasil+internacional na mesma execução misturaria a fila dos
-    dois."""
+    dois.
+
+    `situacao` existe pra registrar vaga que entra no banco SEM nunca ter
+    sido notificada: 'descartada' é o que o piso de relevância grava (ver
+    LIMIAR_RELEVANCIA_MINIMA em config.py e ciclo_de_busca em main.py).
+    Guardar em vez de simplesmente ignorar é o que impede a vaga de voltar
+    como "nova" a cada ciclo de 3h pra sempre — ja_vista() só reconhece o
+    que existe no banco. Como vai com digest_pendente=0, ela também nunca
+    entra no digest (ver obter_vagas_pendentes_digest), e continua no
+    histórico pro relatorio_precisao.py medir o que cada fonte rende
+    incluindo o que o corte derrubou."""
     with _conectar() as conn:
         conn.execute(
             """
@@ -254,7 +270,7 @@ def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, expl
             (
                 job.id, job.titulo, job.empresa, job.local, job.link, job.site,
                 job.chave_secundaria, job.publicado_em, job.modalidade,
-                job.relevancia, perfil_chave, int(digest_pendente), int(exploratoria), "nova",
+                job.relevancia, perfil_chave, int(digest_pendente), int(exploratoria), situacao,
             ),
         )
 
