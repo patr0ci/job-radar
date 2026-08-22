@@ -6,7 +6,12 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 
-from core.config import DIGEST_HORA_UTC, INTERVALO_MINUTOS, LIMIAR_DIGEST_IMEDIATO
+from core.config import (
+    DIGEST_HORA_UTC,
+    INTERVALO_MINUTOS,
+    LIMIAR_DIGEST_IMEDIATO,
+    LIMIAR_RELEVANCIA_MINIMA,
+)
 from database.database import (
     BancoVazioSuspeito,
     definir_metadado,
@@ -31,20 +36,48 @@ from core.logger import get_logger
 logger = get_logger()
 
 
-def _fontes_baixa_frequencia_ja_rodaram_hoje(perfil: Perfil) -> bool:
+def _baixa_frequencia_ainda_no_intervalo(perfil: Perfil) -> bool:
+    """As fontes FREQUENCIA_BAIXA deste perfil já rodaram dentro da janela
+    de perfil.intervalo_baixa_frequencia_dias?
+
+    Com o default (1 dia) isto é exatamente o que a versão anterior fazia —
+    "a data salva é hoje?". A generalização entrou pro perfil linkedin, que
+    roda de 2 em 2 dias por risco de bloqueio de conta, não por custo.
+
+    Data ilegível no metadado devolve False (deixa rodar): o valor é
+    gravado por este mesmo código, então texto inválido ali significa banco
+    mexido à mão ou corrompido — e nesse caso rodar a mais é o erro barato,
+    enquanto travar a fonte pra sempre passaria despercebido.
+
+    Diferença de datas negativa (relógio do runner atrás do que gravou, ou
+    metadado do futuro) cai no lado do "ainda no intervalo": na dúvida,
+    espera. É o lado seguro justamente pra fonte que tem risco de ban.
+    """
     chave = f"baixa_frequencia_ultimo_dia_{perfil.chave}"
-    return obter_metadado(chave) == date.today().isoformat()
+    ultimo = obter_metadado(chave)
+    if not ultimo:
+        return False
+    try:
+        dias_desde = (date.today() - date.fromisoformat(ultimo)).days
+    except ValueError:
+        logger.warning(
+            f"[{perfil.nome}] Metadado {chave}={ultimo!r} não é data ISO — "
+            "tratando como se nunca tivesse rodado."
+        )
+        return False
+    return dias_desde < perfil.intervalo_baixa_frequencia_dias
 
 
 # Não é mais uma lista fixa construída uma vez: os scrapers recebem só o
 # BLOCO de termos do ciclo atual (ver _proximo_bloco_termos), e a lista de
 # QUAIS fontes entram também varia por ciclo (fonte de baixa frequência só
-# entra na primeira execução do dia) — então precisam ser (re)criados a
+# entra quando passou o intervalo do perfil — ver
+# _baixa_frequencia_ainda_no_intervalo) — então precisam ser (re)criados a
 # cada ciclo, não guardados numa constante de módulo. Cada perfil tem sua
 # própria chave de metadados (sufixo perfil.chave), pra rodar dois perfis
 # na mesma execução sem um pisar na cadência do outro.
 def _construir_scrapers(perfil: Perfil, termos_busca: list[str]):
-    rodar_baixa_frequencia = not _fontes_baixa_frequencia_ja_rodaram_hoje(perfil)
+    rodar_baixa_frequencia = not _baixa_frequencia_ainda_no_intervalo(perfil)
 
     scrapers = [
         definicao.classe(termos_busca=termos_busca, **definicao.kwargs_extras)
@@ -250,8 +283,10 @@ def ciclo_de_busca(perfil: Perfil):
     total_novas = 0
     total_brutas = 0
     total_filtradas = 0
+    total_descartadas_por_nota = 0
     scrapers_com_problema = []
     descartes_escopo_ciclo: Counter = Counter()
+    descartes_empresa_ciclo: Counter = Counter()
 
     termos_do_ciclo = _proximo_bloco_termos(perfil)
     logger.info(
@@ -293,8 +328,9 @@ def ciclo_de_busca(perfil: Perfil):
                 continue
 
             total_brutas += len(vagas)
-            vagas_filtradas, descartes = filtrar_vagas(vagas, perfil.regras)
+            vagas_filtradas, descartes, bloqueios = filtrar_vagas(vagas, perfil.regras)
             descartes_escopo_ciclo.update(descartes)
+            descartes_empresa_ciclo.update(bloqueios)
 
             # Eixo secundário (Ibéria, quando ligado): mesma regra de cargo,
             # cidade diferente — sem duplicar o que já bateu na regra
@@ -302,15 +338,40 @@ def ciclo_de_busca(perfil: Perfil):
             vagas_secundarias = []
             if perfil.eixo_secundario_ativo and perfil.regras_eixo_secundario is not None:
                 ids_filtradas = {v.id for v in vagas_filtradas}
-                candidatas, descartes_secundario = filtrar_vagas(vagas, perfil.regras_eixo_secundario)
+                candidatas, descartes_secundario, bloqueios_secundario = filtrar_vagas(
+                    vagas, perfil.regras_eixo_secundario
+                )
                 descartes_escopo_ciclo.update(descartes_secundario)
+                descartes_empresa_ciclo.update(bloqueios_secundario)
                 vagas_secundarias = [v for v in candidatas if v.id not in ids_filtradas]
 
             total_filtradas += len(vagas_filtradas) + len(vagas_secundarias)
 
             novas_da_fonte = 0
+            descartadas_da_fonte = 0
             for vaga in vagas_filtradas:
                 if ja_vista(vaga):
+                    continue
+
+                # Piso de relevância (LIMIAR_RELEVANCIA_MINIMA): abaixo do
+                # corte a vaga não notifica na hora NEM entra no digest —
+                # mas é salva do mesmo jeito, com situacao='descartada' e
+                # digest_pendente=0. Salvar é o que impede ela de voltar
+                # como "nova" a cada 3h pra sempre: ja_vista() só reconhece
+                # o que está no banco (ver salvar_vaga em database.py).
+                #
+                # Vem ANTES do branch do digest de propósito: o corte é
+                # sobre a vaga entrar ou não no radar, não sobre com que
+                # urgência ela chega. Vaga antiga (publicacao_antiga) não
+                # influencia aqui — quem decide isso é só o score.
+                if vaga.relevancia < LIMIAR_RELEVANCIA_MINIMA:
+                    salvar_vaga(vaga, perfil_chave=perfil.chave, situacao="descartada")
+                    logger.info(
+                        f"[{perfil.nome}] Descartada (relevância {vaga.relevancia}/10 < "
+                        f"{LIMIAR_RELEVANCIA_MINIMA}): {vaga.titulo} - {vaga.empresa}"
+                    )
+                    descartadas_da_fonte += 1
+                    total_descartadas_por_nota += 1
                     continue
 
                 # Item 08: só notifica na hora quando a relevância passa do
@@ -360,6 +421,25 @@ def ciclo_de_busca(perfil: Perfil):
                 if ja_vista(vaga):
                     continue
 
+                # Mesmo piso de relevância do loop acima — o eixo
+                # exploratório é mais permissivo na GEOGRAFIA (cidade
+                # europeia em vez de remoto), não na qualidade da vaga.
+                if vaga.relevancia < LIMIAR_RELEVANCIA_MINIMA:
+                    salvar_vaga(
+                        vaga,
+                        perfil_chave=perfil.chave,
+                        exploratoria=True,
+                        situacao="descartada",
+                    )
+                    logger.info(
+                        f"[{perfil.nome}] Descartada exploratória (relevância "
+                        f"{vaga.relevancia}/10 < {LIMIAR_RELEVANCIA_MINIMA}): "
+                        f"{vaga.titulo} - {vaga.empresa}"
+                    )
+                    descartadas_da_fonte += 1
+                    total_descartadas_por_nota += 1
+                    continue
+
                 # Mesma regra de vaga antiga do loop acima.
                 if vaga.relevancia >= LIMIAR_DIGEST_IMEDIATO and not vaga.publicacao_antiga:
                     if not notificar_vaga_exploratoria(vaga):
@@ -389,13 +469,25 @@ def ciclo_de_busca(perfil: Perfil):
             # cargo/cidade descarta, fonte por fonte) ficava invisível.
             logger.info(
                 f"[{perfil.nome}][{nome}] Funil: {len(vagas)} brutas → "
-                f"{len(vagas_filtradas) + len(vagas_secundarias)} filtradas → {novas_da_fonte} novas"
+                f"{len(vagas_filtradas) + len(vagas_secundarias)} filtradas → "
+                f"{descartadas_da_fonte} cortadas por nota → {novas_da_fonte} novas"
             )
 
     logger.info(
         f"[{perfil.nome}] Ciclo concluído: {total_brutas} brutas → {total_filtradas} filtradas → "
-        f"{total_novas} nova(s)."
+        f"{total_descartadas_por_nota} cortada(s) por nota → {total_novas} nova(s)."
     )
+
+    # Contagem da blocklist de empresa: só conta vaga que TERIA passado
+    # (ver Job.empresa_rejeitada_por_bloqueio). Serve pra flagrar entrada
+    # mal escolhida — um nome curto demais que comece a derrubar empresa
+    # alheia aparece aqui como salto de contagem, em vez de sumir no funil
+    # indistinguível de qualquer outro descarte.
+    if descartes_empresa_ciclo:
+        detalhe = "; ".join(
+            f"{empresa} ({n})" for empresa, n in descartes_empresa_ciclo.most_common()
+        )
+        logger.info(f"[{perfil.nome}] Bloqueio por empresa: {detalhe}")
 
     # MEDIDO: descarte por escopo era invisível no log — o funil mostra
     # bruta → filtrada → nova, mas nunca QUAL escopo derrubou vaga nem

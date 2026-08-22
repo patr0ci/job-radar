@@ -896,6 +896,13 @@ class RegrasFiltro:
     # mercado hispanofalante-lusófono explicitamente. None = não checa
     # (BR não precisa — fonte já é 100% brasileira/portuguesa).
     idiomas_exigidos: list[str] | None = None
+    # Empresas rejeitadas pelo nome (ver EMPRESAS_BLOQUEADAS em config.py).
+    # Único critério que lê Job.empresa — os outros só olham título/local/
+    # modalidade. Comparação normalizada e com borda de palavra, então a
+    # mesma entrada pega "BAIRESDEV", "BairesDev" e "BairesDev LLC".
+    # None/lista vazia = não bloqueia ninguém (default seguro: perfil que
+    # não configurou isso se comporta igual a antes do campo existir).
+    empresas_bloqueadas: list[str] | None = None
 
 
 @dataclass
@@ -915,6 +922,13 @@ class _Avaliacao:
     escopos: set[str]
     mercado_confirmado: bool  # escopo bateu explicitamente um mercado aceito
     idioma_bateu_titulo: bool
+    empresa_bloqueada: bool
+    # Teria passado se a empresa não estivesse bloqueada (cargo e geografia
+    # bateram). Guardado separado de `aprovada` só pra diagnóstico: é o que
+    # permite contar quantas vagas BOAS a blocklist derrubou, sem confundir
+    # com as que já cairiam por cargo/cidade de qualquer jeito — ver
+    # empresa_rejeitada_por_bloqueio.
+    aprovada_sem_bloqueio: bool
 
 
 # Pesos do score de relevância (pontuar_relevancia, máximo 10) — soma
@@ -1137,6 +1151,13 @@ class Job:
           "power bi"). É o que permite ir adicionando cargo adjacente
           (Product Analyst, CRM Analyst, Marketing Analyst) sem cada um virar
           fonte de ruído sozinho.
+
+        Por cima disso vem um veto: empresa em `regras.empresas_bloqueadas`
+        (ver EMPRESAS_BLOQUEADAS em config.py) reprova a vaga mesmo que
+        cargo e cidade tenham batido. É o único critério aqui que lê
+        `empresa` — e é veto, não mais um sinal a somar: não existe título
+        bom o bastante pra compensar a empresa ser uma que o usuário não
+        quer.
         """
         return self._avaliar(regras).aprovada
 
@@ -1147,6 +1168,16 @@ class Job:
         titulo_norm = _normalizar(self.titulo)
         local_norm = _normalizar(self.local)
         modalidade_norm = _normalizar(self.modalidade)
+
+        # Bloqueio por empresa: independe de cargo e geografia, mas é
+        # aplicado só no fim (ver `aprovada` lá embaixo) pra não atrapalhar
+        # o diagnóstico — os outros sinais continuam sendo calculados, então
+        # dá pra saber se a vaga bloqueada TERIA passado ou não.
+        empresa_norm = _normalizar(self.empresa)
+        empresa_bloqueada = bool(regras.empresas_bloqueadas) and any(
+            _contem_termo(_normalizar(e), empresa_norm)
+            for e in regras.empresas_bloqueadas
+        )
 
         bate_forte = any(
             _contem_termo(_normalizar(k), titulo_norm) for k in regras.keywords_forte
@@ -1244,8 +1275,10 @@ class Job:
             if _normalizar(c) not in _FLAGS_REMOTO
         )
 
+        aprovada_sem_bloqueio = bate_keyword and bate_cidade
+
         return _Avaliacao(
-            aprovada=bate_keyword and bate_cidade,
+            aprovada=aprovada_sem_bloqueio and not empresa_bloqueada,
             bate_forte=bate_forte,
             bate_ambiguo=bate_ambiguo,
             bate_ferramenta=bate_ferramenta,
@@ -1253,6 +1286,8 @@ class Job:
             escopos=escopos,
             mercado_confirmado=bate_remoto and bool(escopos),
             idioma_bateu_titulo=idioma_bateu_titulo,
+            empresa_bloqueada=empresa_bloqueada,
+            aprovada_sem_bloqueio=aprovada_sem_bloqueio,
         )
 
     def pontuar_relevancia(self, regras: RegrasFiltro) -> int:
@@ -1377,3 +1412,22 @@ class Job:
         if escopos_norm & mercados_aceitos_norm:
             return None
         return escopos
+
+    def empresa_rejeitada_por_bloqueio(self, regras: RegrasFiltro) -> str | None:
+        """Só pra diagnóstico/log (ver utils/filtro.py) — mesma ideia de
+        escopo_rejeitado_por_mercado: devolve o nome da empresa quando FOI o
+        bloqueio dela que derrubou a vaga, None quando não se aplica.
+
+        "Não se aplica" inclui o caso da vaga bloqueada que JÁ cairia por
+        cargo ou cidade — contar essa como vítima da blocklist inflaria o
+        número e esconderia o que ele existe pra vigiar: quanta vaga BOA a
+        lista está matando. Uma entrada mal escolhida (nome curto demais,
+        nome que colide com outra empresa) aparece aqui como um salto de
+        contagem; sem isso, ela derrubaria vaga em silêncio, indistinguível
+        de qualquer outro descarte no funil (é o mesmo motivo documentado no
+        MEDIDO de escopo_rejeitado_por_mercado).
+        """
+        av = self._avaliar(regras)
+        if av.empresa_bloqueada and av.aprovada_sem_bloqueio:
+            return self.empresa
+        return None
