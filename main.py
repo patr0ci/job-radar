@@ -22,7 +22,7 @@ from database.database import (
     obter_vagas_pendentes_digest,
     salvar_vaga,
 )
-from notifier.telegram import (
+from notifier.canal import (
     enviar_digest,
     enviar_mensagem,
     notificar_vaga,

@@ -447,6 +447,12 @@ DIGEST_HORA_UTC = 9
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
+# Canal alternativo ao Telegram: URL de webhook do Discord ou do Slack (a
+# plataforma é detectada pela própria URL, ver notifier/webhook.py).
+# Preenchida, ela GANHA do Telegram — quem decide é notifier/canal.py, que é
+# o que main.py importa. Vazia, o robô segue no Telegram como sempre.
+NOTIFICADOR_WEBHOOK_URL = os.getenv("NOTIFICADOR_WEBHOOK_URL", "").strip()
+
 # Caminho ancorado na RAIZ do projeto, não na pasta deste arquivo.
 #
 # MEDIDO: o commit b8227b0 ("Reorganiza raiz: ... -> core/") moveu este

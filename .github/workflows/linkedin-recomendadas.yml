@@ -62,6 +62,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Canal alternativo ao Telegram: preenchida, o robô posta no
+          # webhook de Discord/Slack em vez do Telegram — quem decide é
+          # notifier/canal.py, que é o que main.py importa. Secret não
+          # cadastrado chega aqui como string vazia, e aí o fallback é o
+          # Telegram de sempre; por isso a linha pode existir antes do
+          # secret. Sem ela, o canal de webhook funcionaria só no Docker
+          # local (que lê o .env) e nunca no Actions, silenciosamente.
+          NOTIFICADOR_WEBHOOK_URL: ${{ secrets.NOTIFICADOR_WEBHOOK_URL }}
           # Cookie de sessão da conta do LinkedIn. É credencial pessoal de
           # acesso total — tem que ser secret do repositório, nunca variável
           # de ambiente em texto no arquivo. Ver docs/linkedin-recomendadas.md.

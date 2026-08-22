@@ -43,6 +43,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Canal alternativo ao Telegram: preenchida, o robô posta no
+          # webhook de Discord/Slack em vez do Telegram — quem decide é
+          # notifier/canal.py, que é o que main.py importa. Secret não
+          # cadastrado chega aqui como string vazia, e aí o fallback é o
+          # Telegram de sempre; por isso a linha pode existir antes do
+          # secret. Sem ela, o canal de webhook funcionaria só no Docker
+          # local (que lê o .env) e nunca no Actions, silenciosamente.
+          NOTIFICADOR_WEBHOOK_URL: ${{ secrets.NOTIFICADOR_WEBHOOK_URL }}
         # Antes disso só o perfil Brasil rodava aqui — main_intl.py existia
         # no repositório mas nunca foi chamado pelo workflow, então o
         # pipeline internacional nunca rodou de verdade em produção. Agora é

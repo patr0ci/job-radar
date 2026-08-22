@@ -102,7 +102,11 @@ def _linha_aviso_antiga(job) -> str:
     return f"⚠️ <b>Postada {job.publicado_em}</b> — pode já estar preenchida.\n"
 
 
-def notificar_vaga(job) -> bool:
+def texto_vaga(job) -> str:
+    """Só o texto do cartão da vaga, separado do envio — notifier/webhook.py
+    reaproveita isto pro Discord/Slack (convertendo o HTML pro markup de lá).
+    Sem essa separação, o template viveria duplicado em dois módulos e
+    divergiria no primeiro ajuste de layout."""
     # TODO (Fase 3): incluir aqui a % de compatibilidade com o currículo,
     # calculada por IA, quando essa etapa for implementada.
     #
@@ -125,10 +129,14 @@ def notificar_vaga(job) -> bool:
         f"Encontrada agora\n\n"
         f"<b>Link:</b>\n{job.link}"
     )
-    return enviar_mensagem(texto, reply_markup=_teclado_feedback(job.id))
+    return texto
 
 
-def notificar_vaga_exploratoria(job) -> bool:
+def notificar_vaga(job) -> bool:
+    return enviar_mensagem(texto_vaga(job), reply_markup=_teclado_feedback(job.id))
+
+
+def texto_vaga_exploratoria(job) -> str:
     """Vaga achada via eixo Ibérico (Portugal/Espanha) — fisicamente lá, não
     remota. Mensagem separada de notificar_vaga() de propósito: mandar isso
     pelo template normal sugeriria "achado remoto de verdade", quando na
@@ -154,7 +162,11 @@ def notificar_vaga_exploratoria(job) -> bool:
         f"como remota, pode ser presencial ou híbrida. Confirma no link.\n\n"
         f"<b>Link:</b>\n{job.link}"
     )
-    return enviar_mensagem(texto, reply_markup=_teclado_feedback(job.id))
+    return texto
+
+
+def notificar_vaga_exploratoria(job) -> bool:
+    return enviar_mensagem(texto_vaga_exploratoria(job), reply_markup=_teclado_feedback(job.id))
 
 
 # Margem sob o limite real do Telegram (4096 caracteres por mensagem) —
@@ -163,13 +175,17 @@ def notificar_vaga_exploratoria(job) -> bool:
 _LIMITE_CHARS_DIGEST = 3500
 
 
-def montar_digest(vagas: list[tuple], rotulo_perfil: str) -> list[str]:
+def montar_digest(vagas: list[tuple], rotulo_perfil: str, limite: int = _LIMITE_CHARS_DIGEST) -> list[str]:
     """Monta o texto do digest diário (item 08) a partir do que
     obter_vagas_pendentes_digest() devolve — já vem ordenado da mais
     relevante pra menos. Devolve uma LISTA de mensagens, não uma só: com
     ~93% do volume indo pro digest (ver LIMIAR_DIGEST_IMEDIATO em
     config.py), um dia cheio passa fácil dos 4096 caracteres do Telegram
-    — quebra em partes numeradas em vez de estourar/truncar."""
+    — quebra em partes numeradas em vez de estourar/truncar.
+
+    `limite` é parâmetro porque notifier/webhook.py reusa esta montagem com
+    o teto do Discord/Slack (bem menor que o do Telegram) — deixar a quebra
+    acontecer aqui mantém o cabeçalho "parte 1/2" correto em cada pedaço."""
     linhas = [
         f'{"🧭" if exploratoria else "•"} {_linha_relevancia(relevancia or 0)} '
         f'<a href="{link}">{titulo}</a> — {empresa}'
@@ -180,7 +196,7 @@ def montar_digest(vagas: list[tuple], rotulo_perfil: str) -> list[str]:
     parte_atual: list[str] = []
     tamanho_atual = 0
     for linha in linhas:
-        if parte_atual and tamanho_atual + len(linha) + 1 > _LIMITE_CHARS_DIGEST:
+        if parte_atual and tamanho_atual + len(linha) + 1 > limite:
             partes.append(parte_atual)
             parte_atual, tamanho_atual = [], 0
         parte_atual.append(linha)

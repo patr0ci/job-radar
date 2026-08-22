@@ -102,11 +102,13 @@ obradar/
 ├── database/
 │ └── database.py ← SQLite: dedup, fila de digest, metadados
 ├── notifier/
-│ └── telegram.py ← notificação individual, digest, botão 👍/👎
+│ ├── canal.py ← escolhe Telegram ou webhook pelo .env
+│ ├── telegram.py ← notificação individual, digest, botão 👍/👎
+│ └── webhook.py ← mesmo contrato, via Discord/Slack
 ├── scrapers/ ← um módulo por fonte (LinkedIn, Gupy, Indeed...)
 ├── utils/
 │ └── filtro.py
-├── tests/ ← 418 casos, roda em CI a cada push
+├── tests/ ← 443 casos, roda em CI a cada push
 ├── data/
 │ └── jobs.db ← banco versionado (histórico de dedup)
 └── .github/workflows/
@@ -130,6 +132,8 @@ Criar `.env` na raiz com `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (via [@BotFat
 python main.py --perfil brasil internacional --once
 ```
 
+**Alternativa ao Telegram:** preenchendo `NOTIFICADOR_WEBHOOK_URL` no `.env` com uma URL de webhook do Discord ou do Slack, o robô passa a notificar por lá e ignora o Telegram — a plataforma é detectada pela própria URL, sem variável de "modo" separada. Criar o webhook leva dois cliques nas configurações do canal, contra criar um bot no @BotFather e descobrir o `chat_id`. O que se perde são os botões 👍/👎 de feedback, que dependem de bot de verdade (webhook é via de mão única). Rodando no GitHub Actions, a URL precisa entrar como *repository secret*: ela **é** a credencial — quem tem a URL posta no seu canal.
+
 Há ainda o perfil `linkedin`, que lê as **vagas recomendadas** da sua conta do LinkedIn (API privada, exige o cookie `li_at`) e roda num cron próprio, de 2 em 2 dias. É opcional: sem o cookie configurado ele se desliga sozinho. Como configurar, onde pegar os cookies e quais os riscos estão em [`docs/linkedin-recomendadas.md`](docs/linkedin-recomendadas.md).
 
 ## 🧪 Testes
@@ -138,7 +142,7 @@ Há ainda o perfil `linkedin`, que lê as **vagas recomendadas** da sua conta do
 pytest tests/ -v
 ```
 
-418 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
+443 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram, a conversão de markup do webhook e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
 
 ---
 
