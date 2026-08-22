@@ -87,7 +87,7 @@ Vaga de alta relevância chega na hora, com motivo da aprovação, nível e link
 - **Score de relevância sem ML:** 5 sinais conhecidos (cargo, ferramenta, senioridade, mercado, idioma), pesos calibrados contra o histórico real do banco, não chutados.
 - **Zero infraestrutura:** GitHub Actions como motor de cron, SQLite como banco — versionado no próprio Git, o histórico de vagas já vistas *é* o commit.
 - **Resiliente:** nunca marca vaga como "vista" sem confirmar que a notificação saiu; alerta automático se metade das fontes falhar num ciclo; heartbeat diário confirmando que o robô ainda está de pé.
-- **73 testes automatizados em CI:** cada caso documenta um bug real já corrigido nesta base — não é cenário hipotético, é regressão registrada.
+- **115 testes automatizados em CI (443 casos parametrizados):** cada caso documenta um bug real já corrigido nesta base — não é cenário hipotético, é regressão registrada.
 
 ## 📁 Estrutura do repositório
 
